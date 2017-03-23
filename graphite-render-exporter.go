@@ -13,14 +13,12 @@ import (
 
 
 const pollPeriod = time.Second * 10
-var graphiteBaseURL = os.Getenv("GRAPHITE_URL")
-//"http://localhost:8080/render"
-var graphiteParameters = "target="+os.Getenv("TARGETS")+"&from=-50s&format=json"
-// stats_counts.*
-var url = graphiteBaseURL+"?"+graphiteParameters
-var  metrics = []Metric{}
-var  tick = time.NewTicker(pollPeriod).C
-var shutdownPoller = make(chan bool)
+
+var url string 
+
+var tick = time.NewTicker(pollPeriod).C
+var metricsOut = make(chan []Metric)
+var metricRequest = make(chan bool)
 
 type Target struct {
   Target string `json:"target"`
@@ -50,21 +48,16 @@ func (m Metric) String() string {
 var myClient = &http.Client{Timeout: 10 * time.Second}
 
 
-func poll(url string) {
-  for {
-    select {
-      case <- tick :
-      log.Println("Start polling metrics from Graphite")
-        metrics = getMetrics(url)
-      log.Println("Poll finished")
-      case <- shutdownPoller:
-        return
-    }
-  }
+func poller(channel chan []Metric) {
+//  log.Println("Start polling metrics from Graphite")
+  metrics := getMetrics(url)
+//  log.Println("Got metrics from Graphite", metrics)
+  channel <- metrics
+//  log.Println("Poll finished")
 }
 
 func getMetrics(url string) []Metric {
-  println("Retrieving from: "+url)
+  log.Println("Retrieving from: "+url)
 
   data := []Target{}
   getJson(url, &data)
@@ -101,21 +94,49 @@ func serveGraphite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
   defer r.Body.Close()
- // log.Println("Got request")
+//  log.Println("Got request")
   w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+  metricRequest <- true
+  metrics := <- metricsOut
+//  log.Println("Received to handler", metrics)
   c := 0
-  for i, m := range metrics {
-    //log.Println("writing metric to response #", i ," - " , m)
+  for _, m := range metrics {
+//    log.Println("writing metric to response #", c ," - " , m)
     fmt.Fprintf(w, m.String() )
     c++
   }
- // log.Println("Finished writing ", c, " metrics")
+//  log.Println("Finished writing ", c, " metrics")
+}
+
+func storage() {
+  var metrics = []Metric{}
+  var metricsIn = make(chan []Metric)
+  go poller(metricsIn)
+  for {
+    select {
+    case <- tick:
+      go poller(metricsIn)
+      case metrics = <- metricsIn:
+//      log.Println("Received metrics from poller", metrics)
+    case <- metricRequest:
+//      log.Println("Received request for metrics")
+      metricsOut <- metrics
+//      log.Println("Metrics sent to handler", metrics)
+    }
+  }
 }
 
 
 func main() {
-
-  go poll(url)
+  var graphiteBaseURL = os.Getenv("GRAPHITE_URL")
+  if (graphiteBaseURL == "") { graphiteBaseURL = "http://localhost:8080/render" }
+  var graphiteTargets = os.Getenv("TARGETS")
+  if (graphiteTargets == "") { graphiteTargets = "*.*" }
+  var graphiteParameters = "target="+graphiteTargets+"&from=-50s&format=json"
+  // stats_counts.*
+  url = graphiteBaseURL+"?"+graphiteParameters
+  go storage()
+  
   http.HandleFunc("/", serveGraphite)
   log.Fatal(http.ListenAndServe(":8081", nil))
 }
