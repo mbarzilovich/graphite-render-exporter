@@ -15,6 +15,9 @@ import (
 const pollPeriod = time.Second * 10
 var graphiteBaseURL = os.Getenv("GRAPHITE_URL")
 var graphiteTargets = os.Getenv("TARGETS")
+var graphitePollDepth = os.Getenv("POLL_DEPTH")
+var graphiteHttpPassword = os.Getenv("HTTP_PASSWORD")
+var graphiteHttpUser = os.Getenv("HTTP_USER")
 var url string 
 
 
@@ -87,11 +90,15 @@ func getLastNonNullValue(d []Datapoint) float64 {
 }
 
 func getJson(url string, target interface{}) error {
-    r, err := myClient.Get(url)
-    if err != nil {
-        return err
-    }
-    return json.NewDecoder(r.Body).Decode(target)
+  req, err := http.NewRequest("GET", url, nil)
+  if (graphiteHttpPassword != "" && graphiteHttpUser != "") {
+    req.SetBasicAuth(graphiteHttpUser, graphiteHttpPassword)
+  }
+  r, err := myClient.Do(req)
+  if err != nil {
+      return err
+  }
+  return json.NewDecoder(r.Body).Decode(target)
 }
 
 
@@ -141,7 +148,8 @@ func storage() {
 func main() {
   if (graphiteBaseURL == "") { graphiteBaseURL = "http://localhost:8080/render" }
   if (graphiteTargets == "") { graphiteTargets = "*.*" }
-  var graphiteParameters = "target="+graphiteTargets+"&from=-50s&format=json"
+  if (graphitePollDepth == "") {graphitePollDepth = "50s"}
+  var graphiteParameters = "target="+graphiteTargets+"&from=-"+graphitePollDepth+"&format=json"
   // stats_counts.*
   url = graphiteBaseURL+"?"+graphiteParameters
   go storage()
