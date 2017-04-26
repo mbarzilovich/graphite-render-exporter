@@ -6,10 +6,9 @@ Sometimes I have to run two monitoring solutions in parallel. Graphite infrastri
 
 #### Usage
 Quick run:
-
         go run graphite-render-exporter.go
-Recommended usage is docker container:
 
+Recommended usage is docker container:
         docker run mbarzilovich/graphite-render-exporter
 
 #### Configuration
