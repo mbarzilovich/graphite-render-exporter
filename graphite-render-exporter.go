@@ -79,7 +79,9 @@ func getMetrics(url string) []Metric {
 
 	data := []Target{}
 	getJson(url, &data)
-	log.Println(data)
+	if debug {
+		log.Println(data)
+	}
 	m := []Metric{}
 	for _, t := range data {
 		metric := Metric{Name: strings.Replace(t.Target, ".", "_", -1), Value: getLastNonNullValue(t.Datapoints), Labels: getLabels()}
@@ -119,13 +121,17 @@ func serveGraphite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer r.Body.Close()
-	log.Println("Server: Got request")
+	if debug {
+		log.Println("Server: Got request")
+	}
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	var metricsOut = make(chan []Metric)
 	defer close(metricsOut)
 	metricRequest <- metricsOut
 	metrics := <-metricsOut
-	log.Println("Server: Received to handler", metrics)
+	if debug {
+		log.Println("Server: Received to handler", metrics)
+	}
 	c := 0
 	for _, m := range metrics {
 		if debug {
